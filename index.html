@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dompet Halal</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background:#f6f7f9; }
+    header { background:#0ea5a4; color:#fff; padding:16px; text-align:center; position:sticky; top:0; z-index:5; }
+    .container { padding:16px; max-width:900px; margin:0 auto; }
+    .card { background:#fff; border-radius:16px; padding:16px; box-shadow:0 6px 16px rgba(0,0,0,.08); margin-bottom:12px; }
+    h2 { margin:0 0 8px 0; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    input, select, button { width:100%; padding:10px; border-radius:10px; border:1px solid #ddd; }
+    button.primary { background:#0ea5a4; color:#fff; border:none; font-weight:600; }
+    .row { display:flex; justify-content:space-between; margin:6px 0; gap:8px; align-items:center; }
+    .badge { padding:4px 8px; border-radius:999px; font-size:12px; white-space:nowrap; }
+    .halal { background:#dcfce7; color:#166534; }
+    .konv { background:#fee2e2; color:#991b1b; }
+    .list { max-height:260px; overflow:auto; }
+    footer { text-align:center; color:#64748b; padding:12px; }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+    .tabs button { width:auto; }
+    .hidden { display:none; }
+    canvas { width:100%; max-width:100%; height:220px; border:1px dashed #e5e7eb; border-radius:12px; }
+    .warn { color:#b91c1c; font-weight:600; }
+    .ok { color:#166534; font-weight:600; }
+    .thumb { width:48px; height:48px; object-fit:cover; border-radius:8px; border:1px solid #e5e7eb; }
+    .receipt-preview { display:flex; gap:8px; align-items:center; }
+    .note { font-size:12px; color:#64748b; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dompet Halal</h1>
+    <p>Pengatur Keuangan & Tabungan (v6 – Rekap per Toko)</p>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <div class="tabs">
+        <button onclick="showTab('home')">Ringkasan</button>
+        <button onclick="showTab('add')">Tambah</button>
+        <button onclick="showTab('chart')">Grafik</button>
+        <button onclick="showTab('store')">Rekap Toko</button>
+        <button onclick="showTab('budget')">Anggaran</button>
+        <button onclick="exportCSV()">Ekspor CSV</button>
+        <button onclick="exportPDF()">Laporan PDF</button>
+      </div>
+    </div>
+
+    <div id="tab-home" class="card">
+      <h2>Ringkasan Bulan Ini</h2>
+      <div class="row"><span>Total Masuk</span><strong id="totalMasuk">Rp0</strong></div>
+      <div class="row"><span>Total Keluar</span><strong id="totalKeluar">Rp0</strong></div>
+      <div class="row"><span>Sisa</span><strong id="sisa">Rp0</strong></div>
+      <div class="row"><span>Target Dana Darurat (6x x Rp10 jt)</span><strong id="targetDD">Rp60.000.000</strong></div>
+      <div class="row"><span>Terkumpul Dana Darurat</span><strong id="ddNow">Rp0</strong></div>
+      <div class="row"><span>Status Anggaran</span><strong id="budgetStatus" class="ok">Aman</strong></div>
+      <div class="row">
+        <span>🔔 Reminder nabung bulanan</span>
+        <button onclick="scheduleReminder()">Aktifkan</button>
+      </div>
+    </div>
+
+    <div id="tab-add" class="card hidden">
+      <h2>Tambah Transaksi (dengan Toko + Foto Struk)</h2>
+      <div class="grid">
+        <select id="tipe">
+          <option value="masuk">Pemasukan</option>
+          <option value="keluar">Pengeluaran</option>
+        </select>
+        <input id="nominal" type="number" placeholder="Nominal (Rp)" />
+        <input id="toko" type="text" placeholder="Nama Toko (mis: Alfamart)" />
+        <select id="kategori">
+          <option>Makan</option><option>Bensin</option><option>Rokok</option>
+          <option>Listrik</option><option>Internet</option><option>Sedekah</option>
+          <option>Belanja</option><option>Lainnya</option>
+        </select>
+        <select id="pos">
+          <option>Kebutuhan</option>
+          <option>Dana Darurat</option>
+          <option>Dana Masa Depan</option>
+          <option>Dana Keinginan</option>
+        </select>
+        <select id="rekening">
+          <option value="BSI|halal">BSI (Syariah)</option>
+          <option value="Mandiri|konv">Mandiri</option>
+          <option value="BRI|konv">BRI</option>
+          <option value="blu|konv">blu BCA</option>
+          <option value="Jago|konv">Bank Jago</option>
+        </select>
+        <input id="struk" type="file" accept="image/*" />
+        <button class="primary" onclick="tambah()">Simpan</button>
+      </div>
+      <div id="preview" class="receipt-preview hidden">
+        <img id="thumb" class="thumb" />
+        <span class="note">Foto struk tersimpan lokal di HP kamu.</span>
+      </div>
+      <p class="note">OCR full otomatis bisa ditambahkan di versi online. Saat ini isi nama toko manual.</p>
+    </div>
+
+    <div id="tab-chart" class="card hidden">
+      <h2>Grafik Bulanan</h2>
+      <p>Masuk vs Keluar</p>
+      <canvas id="chartMain"></canvas>
+      <p>Pengeluaran per Kategori</p>
+      <canvas id="chartCat"></canvas>
+    </div>
+
+    <div id="tab-store" class="card hidden">
+      <h2>Rekap Belanja per Toko (Bulan Ini)</h2>
+      <div id="storeList"></div>
+      <p>Grafik per Toko</p>
+      <canvas id="chartStore"></canvas>
+    </div>
+
+    <div id="tab-budget" class="card hidden">
+      <h2>Anggaran per Kategori (Bulanan)</h2>
+      <p>Auto-budget: sistem menyarankan limit = rata-rata 3 bulan terakhir + 10%</p>
+      <div class="grid">
+        <select id="bKat">
+          <option>Makan</option><option>Bensin</option><option>Rokok</option>
+          <option>Listrik</option><option>Internet</option><option>Sedekah</option>
+          <option>Belanja</option><option>Lainnya</option>
+        </select>
+        <input id="bLimit" type="number" placeholder="Limit manual (opsional)" />
+        <button class="primary" onclick="setBudget()">Set Anggaran</button>
+        <button onclick="autoBudget()">Auto-Budget</button>
+      </div>
+      <div id="budgetList"></div>
+    </div>
+
+    <div class="card">
+      <h2>Riwayat Transaksi</h2>
+      <div class="list" id="list"></div>
+    </div>
+  </div>
+
+  <footer>Tips iPhone: Share → Add to Home Screen</footer>
+
+  <script>
+    const fmt = n => 'Rp' + (n||0).toLocaleString('id-ID');
+    const state = JSON.parse(localStorage.getItem('dompet-halal')||'[]');
+    const budgets = JSON.parse(localStorage.getItem('dompet-budgets')||'{}');
+
+    function showTab(name){
+      ['home','add','chart','store','budget'].forEach(t=>{
+        document.getElementById('tab-'+t).classList.toggle('hidden', t!==name);
+      });
+      if(name==='chart') drawCharts();
+      if(name==='store') renderStore();
+      if(name==='budget') renderBudgets();
+    }
+
+    function render(){
+      let masuk=0, keluar=0, ddNow=0;
+      const list = document.getElementById('list');
+      list.innerHTML='';
+      const month = new Date().getMonth();
+      const year = new Date().getFullYear();
+
+      const spentByCat = {};
+      state.forEach(t=>{
+        const d = new Date(t.t);
+        if(d.getMonth()===month && d.getFullYear()===year){
+          if(t.tipe==='masuk') masuk+=t.nominal;
+          else keluar+=t.nominal;
+          if(t.pos==='Dana Darurat') ddNow += (t.tipe==='masuk'?t.nominal:-t.nominal);
+          if(t.tipe==='keluar'){
+            spentByCat[t.kategori] = (spentByCat[t.kategori]||0) + t.nominal;
+          }
+        }
+        const badge = t.halal==='halal' ? '<span class="badge halal">HALAL</span>' : '<span class="badge konv">KONV</span>';
+        const img = t.img ? `<img src="${t.img}" class="thumb" />` : '';
+        const toko = t.toko ? ` • ${t.toko}` : '';
+        const div = document.createElement('div');
+        div.className='row';
+        div.innerHTML = `<span>${t.tipe.toUpperCase()}${toko} • ${t.kategori} • ${t.pos} • ${t.rekening}</span><strong>${fmt(t.nominal)}</strong> ${badge} ${img}`;
+        list.appendChild(div);
+      });
+
+      document.getElementById('totalMasuk').textContent = fmt(masuk);
+      document.getElementById('totalKeluar').textContent = fmt(keluar);
+      document.getElementById('sisa').textContent = fmt(masuk-keluar);
+      document.getElementById('ddNow').textContent = fmt(ddNow);
+
+      let ok = true;
+      Object.keys(budgets).forEach(k=>{
+        if((spentByCat[k]||0) > budgets[k]) ok=false;
+      });
+      const bs = document.getElementById('budgetStatus');
+      bs.textContent = ok ? 'Aman' : 'Melebihi Anggaran!';
+      bs.className = ok ? 'ok' : 'warn';
+
+      localStorage.setItem('dompet-halal', JSON.stringify(state));
+    }
+
+    function tambah(){
+      const tipe = document.getElementById('tipe').value;
+      const nominal = Number(document.getElementById('nominal').value||0);
+      const kategori = document.getElementById('kategori').value;
+      const pos = document.getElementById('pos').value;
+      const toko = document.getElementById('toko').value || '';
+      const [rekening, halal] = document.getElementById('rekening').value.split('|');
+      const file = document.getElementById('struk').files[0];
+      if(!nominal) return alert('Nominal belum diisi');
+
+      if(file){
+        const reader = new FileReader();
+        reader.onload = () => {
+          state.unshift({tipe, nominal, kategori, pos, toko, rekening, halal, t:Date.now(), img: reader.result});
+          finishAdd();
+        };
+        reader.readAsDataURL(file);
+      } else {
+        state.unshift({tipe, nominal, kategori, pos, toko, rekening, halal, t:Date.now()});
+        finishAdd();
+      }
+    }
+
+    function finishAdd(){
+      render();
+      document.getElementById('nominal').value='';
+      document.getElementById('toko').value='';
+      document.getElementById('struk').value='';
+      document.getElementById('preview').classList.add('hidden');
+      drawCharts();
+      renderStore();
+    }
+
+    document.getElementById('struk').addEventListener('change', (e)=>{
+      const f = e.target.files[0];
+      if(!f) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        document.getElementById('thumb').src = reader.result;
+        document.getElementById('preview').classList.remove('hidden');
+      };
+      reader.readAsDataURL(f);
+    });
+
+    function drawCharts(){
+      drawMain();
+      drawByCategory();
+    }
+
+    function drawMain(){
+      const c = document.getElementById('chartMain');
+      const ctx = c.getContext('2d');
+      const month = new Date().getMonth();
+      const year = new Date().getFullYear();
+      let masuk=0, keluar=0;
+      state.forEach(t=>{
+        const d = new Date(t.t);
+        if(d.getMonth()===month && d.getFullYear()===year){
+          if(t.tipe==='masuk') masuk+=t.nominal; else keluar+=t.nominal;
+        }
+      });
+      const w = c.width = c.clientWidth * 2;
+      const h = c.height = 220 * 2;
+      ctx.clearRect(0,0,w,h);
+      const max = Math.max(masuk, keluar, 1);
+      const barW = w/4;
+      const mH = h-40;
+      ctx.fillRect(w/4 - barW/2, h - (masuk/max)*mH, barW, (masuk/max)*mH);
+      ctx.fillRect(3*w/4 - barW/2, h - (keluar/max)*mH, barW, (keluar/max)*mH);
+      ctx.fillText('Masuk', w/4-20, h-10);
+      ctx.fillText('Keluar', 3*w/4-20, h-10);
+    }
+
+    function drawByCategory(){
+      const c = document.getElementById('chartCat');
+      const ctx = c.getContext('2d');
+      const month = new Date().getMonth();
+      const year = new Date().getFullYear();
+      const spent = {};
+      state.forEach(t=>{
+        const d = new Date(t.t);
+        if(d.getMonth()===month && d.getFullYear()===year && t.tipe==='keluar'){
+          spent[t.kategori] = (spent[t.kategori]||0) + t.nominal;
+        }
+      });
+      const entries = Object.entries(spent);
+      const w = c.width = c.clientWidth * 2;
+      const h = c.height = 220 * 2;
+      ctx.clearRect(0,0,w,h);
+      const max = Math.max(...entries.map(e=>e[1]), 1);
+      const barW = w/(entries.length*1.6 || 1);
+      entries.forEach((e,i)=>{
+        const x = (i+1)*barW*1.2;
+        const bh = (e[1]/max)*(h-40);
+        ctx.fillRect(x, h-bh, barW, bh);
+        ctx.fillText(e[0], x, h-10);
+      });
+    }
+
+    function renderStore(){
+      const el = document.getElementById('storeList');
+      el.innerHTML='';
+      const month = new Date().getMonth();
+      const year = new Date().getFullYear();
+      const byStore = {};
+      state.forEach(t=>{
+        const d = new Date(t.t);
+        if(d.getMonth()===month && d.getFullYear()===year && t.tipe==='keluar'){
+          const k = (t.toko||'Tanpa Toko').toUpperCase();
+          byStore[k] = (byStore[k]||0) + t.nominal;
+        }
+      });
+      Object.entries(byStore).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>{
+        const d = document.createElement('div');
+        d.className='row';
+        d.innerHTML = `<span>${k}</span><strong>${fmt(v)}</strong>`;
+        el.appendChild(d);
+      });
+      drawStoreChart(byStore);
+    }
+
+    function drawStoreChart(byStore){
+      const c = document.getElementById('chartStore');
+      const ctx = c.getContext('2d');
+      const entries = Object.entries(byStore);
+      const w = c.width = c.clientWidth * 2;
+      const h = c.height = 220 * 2;
+      ctx.clearRect(0,0,w,h);
+      if(!entries.length) return;
+      const max = Math.max(...entries.map(e=>e[1]), 1);
+      const barW = w/(entries.length*1.6);
+      entries.forEach((e,i)=>{
+        const x = (i+1)*barW*1.2;
+        const bh = (e[1]/max)*(h-40);
+        ctx.fillRect(x, h-bh, barW, bh);
+        ctx.fillText(e[0].slice(0,8), x, h-10);
+      });
+    }
+
+    function exportCSV(){
+      const rows = [['tipe','nominal','toko','kategori','pos','rekening','halal','waktu','foto_struk']];
+      state.forEach(t=> rows.push([t.tipe, t.nominal, t.toko||'', t.kategori, t.pos, t.rekening, t.halal, new Date(t.t).toISOString(), t.img?'ya':'']));
+      const csv = rows.map(r=>r.join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'dompet-halal.csv';
+      a.click();
+    }
+
+    function exportPDF(){
+      const content = `Dompet Halal - Laporan Bulanan\n\nTotal Masuk: ${document.getElementById('totalMasuk').textContent}\nTotal Keluar: ${document.getElementById('totalKeluar').textContent}\nSisa: ${document.getElementById('sisa').textContent}\n\n(Rekap per Toko tersedia di tab Rekap Toko)`;
+      const blob = new Blob([content], {type:'application/pdf'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'laporan-dompet-halal.pdf';
+      a.click();
+    }
+
+    function setBudget(){
+      const k = document.getElementById('bKat').value;
+      const v = Number(document.getElementById('bLimit').value||0);
+      if(!v) return alert('Isi limit manual atau gunakan Auto-Budget');
+      budgets[k] = v;
+      localStorage.setItem('dompet-budgets', JSON.stringify(budgets));
+      renderBudgets();
+      render();
+    }
+
+    function autoBudget(){
+      const now = new Date();
+      const sums = {};
+      const counts = {};
+      state.forEach(t=>{
+        const d = new Date(t.t);
+        const diff = (now.getFullYear()-d.getFullYear())*12 + (now.getMonth()-d.getMonth());
+        if(diff>=0 && diff<3 && t.tipe==='keluar'){
+          sums[t.kategori] = (sums[t.kategori]||0) + t.nominal;
+          counts[t.kategori] = (counts[t.kategori]||0) + 1;
+        }
+      });
+      Object.keys(sums).forEach(k=>{
+        const avg = sums[k] / Math.max(1, (counts[k]/3));
+        budgets[k] = Math.round(avg * 1.1);
+      });
+      localStorage.setItem('dompet-budgets', JSON.stringify(budgets));
+      renderBudgets();
+      render();
+      alert('Auto-budget diterapkan berdasarkan rata-rata 3 bulan terakhir (+10%).');
+    }
+
+    function renderBudgets(){
+      const el = document.getElementById('budgetList');
+      el.innerHTML='';
+      Object.keys(budgets).forEach(k=>{
+        const d = document.createElement('div');
+        d.className='row';
+        d.innerHTML = `<span>${k}</span><strong>${fmt(budgets[k])}</strong>`;
+        el.appendChild(d);
+      });
+    }
+
+    function scheduleReminder(){
+      alert('Reminder aktif! Simulasi: set pengingat nabung tiap awal bulan. (Gunakan Reminder iPhone untuk notifikasi asli)');
+      localStorage.setItem('dompet-reminder','on');
+    }
+
+    render();
+    showTab('home');
+  </script>
+</body>
+</html>
